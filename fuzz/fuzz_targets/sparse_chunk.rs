@@ -27,9 +27,9 @@ enum Action<A> {
 
 impl<A> Construct<A>
 where
-    A: Arbitrary<'static> + Clone + Debug + Eq,
+    A: Arbitrary + Clone + Debug + Eq,
 {
-    fn make(self) -> SparseChunk<A, 64> {
+    fn make(self) -> SparseChunk<A> {
         match self {
             Construct::Empty => {
                 let out = SparseChunk::new();
@@ -37,7 +37,7 @@ where
                 out
             }
             Construct::Single((index, value)) => {
-                let index = index % SparseChunk::<A, 64>::CAPACITY;
+                let index = index % SparseChunk::<A>::CAPACITY;
                 let out = SparseChunk::unit(index, value.clone());
                 let mut guide = BTreeMap::new();
                 guide.insert(index, value);
@@ -45,8 +45,8 @@ where
                 out
             }
             Construct::Pair((left_index, left, right_index, right)) => {
-                let left_index = left_index % SparseChunk::<A, 64>::CAPACITY;
-                let right_index = right_index % SparseChunk::<A, 64>::CAPACITY;
+                let left_index = left_index % SparseChunk::<A>::CAPACITY;
+                let right_index = right_index % SparseChunk::<A>::CAPACITY;
                 let out = SparseChunk::pair(left_index, left.clone(), right_index, right.clone());
                 let mut guide = BTreeMap::new();
                 guide.insert(left_index, left);
@@ -60,7 +60,7 @@ where
 
 fuzz_target!(|input: (Construct<u32>, Vec<Action<u32>>)| {
     let (cons, actions) = input;
-    let capacity = SparseChunk::<u32, 64>::CAPACITY;
+    let capacity = SparseChunk::<u32>::CAPACITY;
     let mut chunk = cons.make();
     let mut guide: BTreeMap<_, _> = chunk.entries().map(|(i, v)| (i, *v)).collect();
     for action in actions {
@@ -88,6 +88,6 @@ fuzz_target!(|input: (Construct<u32>, Vec<Action<u32>>)| {
             }
         }
         assert_eq!(chunk, guide);
-        assert!(guide.len() <= SparseChunk::<u32, 64>::CAPACITY);
+        assert!(guide.len() <= SparseChunk::<u32>::CAPACITY);
     }
 });

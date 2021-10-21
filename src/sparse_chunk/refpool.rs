@@ -1,14 +1,15 @@
-use core::mem::MaybeUninit;
+use std::mem::MaybeUninit;
 
-use bitmaps::{Bitmap, Bits, BitsImpl};
+use bitmaps::{Bitmap, Bits};
 
 use ::refpool::{PoolClone, PoolDefault};
 
+use crate::types::ChunkLength;
 use crate::SparseChunk;
 
-impl<A, const N: usize> PoolDefault for SparseChunk<A, N>
+impl<A, N> PoolDefault for SparseChunk<A, N>
 where
-    BitsImpl<N>: Bits,
+    N: Bits + ChunkLength<A>,
 {
     unsafe fn default_uninit(target: &mut MaybeUninit<Self>) {
         let ptr = target.as_mut_ptr();
@@ -17,10 +18,10 @@ where
     }
 }
 
-impl<A, const N: usize> PoolClone for SparseChunk<A, N>
+impl<A, N> PoolClone for SparseChunk<A, N>
 where
     A: Clone,
-    BitsImpl<N>: Bits,
+    N: Bits + ChunkLength<A>,
 {
     unsafe fn clone_uninit(&self, target: &mut MaybeUninit<Self>) {
         let ptr = target.as_mut_ptr();
@@ -41,7 +42,7 @@ mod test {
 
     #[test]
     fn default_and_clone() {
-        let pool: Pool<SparseChunk<usize, 64>> = Pool::new(16);
+        let pool: Pool<SparseChunk<usize>> = Pool::new(16);
         let mut ref1 = PoolRef::default(&pool);
         {
             let chunk = PoolRef::make_mut(&pool, &mut ref1);
@@ -49,7 +50,7 @@ mod test {
             chunk.insert(10, 37);
             chunk.insert(31, 337);
         }
-        let ref2 = PoolRef::cloned(&pool, &ref1);
+        let ref2 = ref1.cloned(&pool);
         assert_eq!(ref1, ref2);
         assert!(!PoolRef::ptr_eq(&ref1, &ref2));
     }

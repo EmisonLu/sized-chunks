@@ -1,4 +1,4 @@
-use core::iter::FusedIterator;
+use std::iter::FusedIterator;
 
 use crate::InlineArray;
 

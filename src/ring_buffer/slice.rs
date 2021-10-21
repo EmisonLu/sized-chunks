@@ -2,57 +2,68 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-use core::borrow::Borrow;
-use core::cmp::Ordering;
-use core::fmt::Debug;
-use core::fmt::Error;
-use core::fmt::Formatter;
-use core::hash::Hash;
-use core::hash::Hasher;
-use core::ops::IndexMut;
-use core::ops::{Bound, Index, Range, RangeBounds};
+use std::borrow::Borrow;
+use std::cmp::Ordering;
+use std::fmt::Debug;
+use std::fmt::Error;
+use std::fmt::Formatter;
+use std::hash::Hash;
+use std::hash::Hasher;
+use std::ops::IndexMut;
+use std::ops::{Bound, Index, Range, RangeBounds};
+
+use crate::types::ChunkLength;
 
 use super::{Iter, IterMut, RingBuffer};
 
-use array_ops::{Array, ArrayMut, HasLength};
-
 /// An indexable representation of a subset of a `RingBuffer`.
-pub struct Slice<'a, A, const N: usize> {
+pub struct Slice<'a, A, N: ChunkLength<A>> {
     pub(crate) buffer: &'a RingBuffer<A, N>,
     pub(crate) range: Range<usize>,
 }
 
-impl<'a, A: 'a, const N: usize> HasLength for Slice<'a, A, N> {
+impl<'a, A: 'a, N: ChunkLength<A> + 'a> Slice<'a, A, N> {
     /// Get the length of the slice.
     #[inline]
     #[must_use]
-    fn len(&self) -> usize {
+    pub fn len(&self) -> usize {
         self.range.end - self.range.start
     }
-}
 
-impl<'a, A: 'a, const N: usize> Array for Slice<'a, A, N> {
+    /// Test if the slice is empty.
+    #[inline]
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
     /// Get a reference to the value at a given index.
     #[inline]
     #[must_use]
-    fn get(&self, index: usize) -> Option<&A> {
+    pub fn get(&self, index: usize) -> Option<&'a A> {
         if index >= self.len() {
             None
         } else {
-            Some(unsafe { self.get_unchecked(index) })
+            self.buffer.get(self.range.start + index)
         }
     }
-}
 
-impl<'a, A: 'a, const N: usize> Slice<'a, A, N> {
-    /// Get an unchecked reference to the value at the given index.
-    ///
-    /// # Safety
-    ///
-    /// You must ensure the index is not out of bounds.
+    /// Get a reference to the first value in the slice.
+    #[inline]
     #[must_use]
-    pub unsafe fn get_unchecked(&self, index: usize) -> &A {
-        self.buffer.get_unchecked(self.range.start + index)
+    pub fn first(&self) -> Option<&A> {
+        self.get(0)
+    }
+
+    /// Get a reference to the last value in the slice.
+    #[inline]
+    #[must_use]
+    pub fn last(&self) -> Option<&A> {
+        if self.is_empty() {
+            None
+        } else {
+            self.get(self.len() - 1)
+        }
     }
 
     /// Get an iterator over references to the items in the slice in order.
@@ -133,7 +144,7 @@ impl<'a, A: 'a, const N: usize> Slice<'a, A, N> {
     }
 }
 
-impl<'a, A: 'a, const N: usize> From<&'a RingBuffer<A, N>> for Slice<'a, A, N> {
+impl<'a, A: 'a, N: ChunkLength<A> + 'a> From<&'a RingBuffer<A, N>> for Slice<'a, A, N> {
     #[inline]
     #[must_use]
     fn from(buffer: &'a RingBuffer<A, N>) -> Self {
@@ -147,7 +158,7 @@ impl<'a, A: 'a, const N: usize> From<&'a RingBuffer<A, N>> for Slice<'a, A, N> {
     }
 }
 
-impl<'a, A: 'a, const N: usize> Clone for Slice<'a, A, N> {
+impl<'a, A: 'a, N: ChunkLength<A> + 'a> Clone for Slice<'a, A, N> {
     #[inline]
     #[must_use]
     fn clone(&self) -> Self {
@@ -158,7 +169,7 @@ impl<'a, A: 'a, const N: usize> Clone for Slice<'a, A, N> {
     }
 }
 
-impl<'a, A: 'a, const N: usize> Index<usize> for Slice<'a, A, N> {
+impl<'a, A: 'a, N: ChunkLength<A> + 'a> Index<usize> for Slice<'a, A, N> {
     type Output = A;
 
     #[inline]
@@ -168,7 +179,7 @@ impl<'a, A: 'a, const N: usize> Index<usize> for Slice<'a, A, N> {
     }
 }
 
-impl<'a, A: PartialEq + 'a, const N: usize> PartialEq for Slice<'a, A, N> {
+impl<'a, A: PartialEq + 'a, N: ChunkLength<A> + 'a> PartialEq for Slice<'a, A, N> {
     #[inline]
     #[must_use]
     fn eq(&self, other: &Self) -> bool {
@@ -176,23 +187,7 @@ impl<'a, A: PartialEq + 'a, const N: usize> PartialEq for Slice<'a, A, N> {
     }
 }
 
-impl<'a, A: PartialEq + 'a, const N: usize> PartialEq<SliceMut<'a, A, N>> for Slice<'a, A, N> {
-    #[inline]
-    #[must_use]
-    fn eq(&self, other: &SliceMut<'a, A, N>) -> bool {
-        self.len() == other.len() && self.iter().eq(other.iter())
-    }
-}
-
-impl<'a, A: PartialEq + 'a, const N: usize> PartialEq<RingBuffer<A, N>> for Slice<'a, A, N> {
-    #[inline]
-    #[must_use]
-    fn eq(&self, other: &RingBuffer<A, N>) -> bool {
-        self.len() == other.len() && self.iter().eq(other.iter())
-    }
-}
-
-impl<'a, A: PartialEq + 'a, S, const N: usize> PartialEq<S> for Slice<'a, A, N>
+impl<'a, A: PartialEq + 'a, N: ChunkLength<A> + 'a, S> PartialEq<S> for Slice<'a, A, N>
 where
     S: Borrow<[A]>,
 {
@@ -204,9 +199,9 @@ where
     }
 }
 
-impl<'a, A: Eq + 'a, const N: usize> Eq for Slice<'a, A, N> {}
+impl<'a, A: Eq + 'a, N: ChunkLength<A> + 'a> Eq for Slice<'a, A, N> {}
 
-impl<'a, A: PartialOrd + 'a, const N: usize> PartialOrd for Slice<'a, A, N> {
+impl<'a, A: PartialOrd + 'a, N: ChunkLength<A> + 'a> PartialOrd for Slice<'a, A, N> {
     #[inline]
     #[must_use]
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
@@ -214,7 +209,7 @@ impl<'a, A: PartialOrd + 'a, const N: usize> PartialOrd for Slice<'a, A, N> {
     }
 }
 
-impl<'a, A: Ord + 'a, const N: usize> Ord for Slice<'a, A, N> {
+impl<'a, A: Ord + 'a, N: ChunkLength<A> + 'a> Ord for Slice<'a, A, N> {
     #[inline]
     #[must_use]
     fn cmp(&self, other: &Self) -> Ordering {
@@ -222,14 +217,14 @@ impl<'a, A: Ord + 'a, const N: usize> Ord for Slice<'a, A, N> {
     }
 }
 
-impl<'a, A: Debug + 'a, const N: usize> Debug for Slice<'a, A, N> {
+impl<'a, A: Debug + 'a, N: ChunkLength<A> + 'a> Debug for Slice<'a, A, N> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
         f.write_str("RingBuffer")?;
         f.debug_list().entries(self.iter()).finish()
     }
 }
 
-impl<'a, A: Hash + 'a, const N: usize> Hash for Slice<'a, A, N> {
+impl<'a, A: Hash + 'a, N: ChunkLength<A> + 'a> Hash for Slice<'a, A, N> {
     #[inline]
     fn hash<H: Hasher>(&self, hasher: &mut H) {
         for item in self {
@@ -238,7 +233,7 @@ impl<'a, A: Hash + 'a, const N: usize> Hash for Slice<'a, A, N> {
     }
 }
 
-impl<'a, A: 'a, const N: usize> IntoIterator for &'a Slice<'a, A, N> {
+impl<'a, A: 'a, N: ChunkLength<A> + 'a> IntoIterator for &'a Slice<'a, A, N> {
     type Item = &'a A;
     type IntoIter = Iter<'a, A, N>;
 
@@ -252,47 +247,12 @@ impl<'a, A: 'a, const N: usize> IntoIterator for &'a Slice<'a, A, N> {
 // Mutable slice
 
 /// An indexable representation of a mutable subset of a `RingBuffer`.
-pub struct SliceMut<'a, A, const N: usize> {
+pub struct SliceMut<'a, A, N: ChunkLength<A>> {
     pub(crate) buffer: &'a mut RingBuffer<A, N>,
     pub(crate) range: Range<usize>,
 }
 
-impl<'a, A: 'a, const N: usize> HasLength for SliceMut<'a, A, N> {
-    /// Get the length of the slice.
-    #[inline]
-    #[must_use]
-    fn len(&self) -> usize {
-        self.range.end - self.range.start
-    }
-}
-
-impl<'a, A: 'a, const N: usize> Array for SliceMut<'a, A, N> {
-    /// Get a reference to the value at a given index.
-    #[inline]
-    #[must_use]
-    fn get(&self, index: usize) -> Option<&A> {
-        if index >= self.len() {
-            None
-        } else {
-            Some(unsafe { self.get_unchecked(index) })
-        }
-    }
-}
-
-impl<'a, A: 'a, const N: usize> ArrayMut for SliceMut<'a, A, N> {
-    /// Get a mutable reference to the value at a given index.
-    #[inline]
-    #[must_use]
-    fn get_mut(&mut self, index: usize) -> Option<&mut A> {
-        if index >= self.len() {
-            None
-        } else {
-            Some(unsafe { self.get_unchecked_mut(index) })
-        }
-    }
-}
-
-impl<'a, A: 'a, const N: usize> SliceMut<'a, A, N> {
+impl<'a, A: 'a, N: ChunkLength<A> + 'a> SliceMut<'a, A, N> {
     /// Downgrade this slice into a non-mutable slice.
     #[inline]
     #[must_use]
@@ -303,24 +263,80 @@ impl<'a, A: 'a, const N: usize> SliceMut<'a, A, N> {
         }
     }
 
-    /// Get an unchecked reference to the value at the given index.
-    ///
-    /// # Safety
-    ///
-    /// You must ensure the index is not out of bounds.
+    /// Get the length of the slice.
+    #[inline]
     #[must_use]
-    pub unsafe fn get_unchecked(&self, index: usize) -> &A {
-        self.buffer.get_unchecked(self.range.start + index)
+    pub fn len(&self) -> usize {
+        self.range.end - self.range.start
     }
 
-    /// Get an unchecked mutable reference to the value at the given index.
-    ///
-    /// # Safety
-    ///
-    /// You must ensure the index is not out of bounds.
+    /// Test if the slice is empty.
+    #[inline]
     #[must_use]
-    pub unsafe fn get_unchecked_mut(&mut self, index: usize) -> &mut A {
-        self.buffer.get_unchecked_mut(self.range.start + index)
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    /// Get a reference to the value at a given index.
+    #[inline]
+    #[must_use]
+    pub fn get(&self, index: usize) -> Option<&'a A> {
+        if index >= self.len() {
+            None
+        } else {
+            self.buffer
+                .get(self.range.start + index)
+                .map(|r| unsafe { &*(r as *const _) })
+        }
+    }
+
+    /// Get a mutable reference to the value at a given index.
+    #[inline]
+    #[must_use]
+    pub fn get_mut(&mut self, index: usize) -> Option<&'a mut A> {
+        if index >= self.len() {
+            None
+        } else {
+            self.buffer
+                .get_mut(self.range.start + index)
+                .map(|r| unsafe { &mut *(r as *mut _) })
+        }
+    }
+
+    /// Get a reference to the first value in the slice.
+    #[inline]
+    #[must_use]
+    pub fn first(&self) -> Option<&A> {
+        self.get(0)
+    }
+
+    /// Get a mutable reference to the first value in the slice.
+    #[inline]
+    #[must_use]
+    pub fn first_mut(&mut self) -> Option<&mut A> {
+        self.get_mut(0)
+    }
+
+    /// Get a reference to the last value in the slice.
+    #[inline]
+    #[must_use]
+    pub fn last(&self) -> Option<&A> {
+        if self.is_empty() {
+            None
+        } else {
+            self.get(self.len() - 1)
+        }
+    }
+
+    /// Get a mutable reference to the last value in the slice.
+    #[inline]
+    #[must_use]
+    pub fn last_mut(&mut self) -> Option<&mut A> {
+        if self.is_empty() {
+            None
+        } else {
+            self.get_mut(self.len() - 1)
+        }
     }
 
     /// Get an iterator over references to the items in the slice in order.
@@ -340,11 +356,14 @@ impl<'a, A: 'a, const N: usize> SliceMut<'a, A, N> {
     #[inline]
     #[must_use]
     pub fn iter_mut(&mut self) -> IterMut<'_, A, N> {
-        IterMut::new_slice(
-            self.buffer,
-            self.buffer.origin + self.range.start,
-            self.len(),
-        )
+        let origin = self.buffer.origin;
+        let len = self.len();
+        IterMut {
+            buffer: self.buffer,
+            left_index: origin + self.range.start,
+            right_index: origin + self.range.start + len,
+            remaining: len,
+        }
     }
 
     /// Create a subslice of this slice.
@@ -404,6 +423,19 @@ impl<'a, A: 'a, const N: usize> SliceMut<'a, A, N> {
         )
     }
 
+    /// Update the value at index `index`, returning the old value.
+    ///
+    /// Panics if `index` is out of bounds.
+    #[inline]
+    #[must_use]
+    pub fn set(&mut self, index: usize, value: A) -> A {
+        if index >= self.len() {
+            panic!("SliceMut::set: index out of bounds");
+        } else {
+            self.buffer.set(self.range.start + index, value)
+        }
+    }
+
     /// Construct a new `RingBuffer` by copying the elements in this slice.
     #[inline]
     #[must_use]
@@ -415,7 +447,7 @@ impl<'a, A: 'a, const N: usize> SliceMut<'a, A, N> {
     }
 }
 
-impl<'a, A: 'a, const N: usize> From<&'a mut RingBuffer<A, N>> for SliceMut<'a, A, N> {
+impl<'a, A: 'a, N: ChunkLength<A> + 'a> From<&'a mut RingBuffer<A, N>> for SliceMut<'a, A, N> {
     #[must_use]
     fn from(buffer: &'a mut RingBuffer<A, N>) -> Self {
         SliceMut {
@@ -428,7 +460,7 @@ impl<'a, A: 'a, const N: usize> From<&'a mut RingBuffer<A, N>> for SliceMut<'a, 
     }
 }
 
-impl<'a, A: 'a, const N: usize> Into<Slice<'a, A, N>> for SliceMut<'a, A, N> {
+impl<'a, A: 'a, N: ChunkLength<A> + 'a> Into<Slice<'a, A, N>> for SliceMut<'a, A, N> {
     #[inline]
     #[must_use]
     fn into(self) -> Slice<'a, A, N> {
@@ -436,7 +468,7 @@ impl<'a, A: 'a, const N: usize> Into<Slice<'a, A, N>> for SliceMut<'a, A, N> {
     }
 }
 
-impl<'a, A: 'a, const N: usize> Index<usize> for SliceMut<'a, A, N> {
+impl<'a, A: 'a, N: ChunkLength<A> + 'a> Index<usize> for SliceMut<'a, A, N> {
     type Output = A;
 
     #[inline]
@@ -446,7 +478,7 @@ impl<'a, A: 'a, const N: usize> Index<usize> for SliceMut<'a, A, N> {
     }
 }
 
-impl<'a, A: 'a, const N: usize> IndexMut<usize> for SliceMut<'a, A, N> {
+impl<'a, A: 'a, N: ChunkLength<A> + 'a> IndexMut<usize> for SliceMut<'a, A, N> {
     #[inline]
     #[must_use]
     fn index_mut(&mut self, index: usize) -> &mut Self::Output {
@@ -454,7 +486,7 @@ impl<'a, A: 'a, const N: usize> IndexMut<usize> for SliceMut<'a, A, N> {
     }
 }
 
-impl<'a, A: PartialEq + 'a, const N: usize> PartialEq for SliceMut<'a, A, N> {
+impl<'a, A: PartialEq + 'a, N: ChunkLength<A> + 'a> PartialEq for SliceMut<'a, A, N> {
     #[inline]
     #[must_use]
     fn eq(&self, other: &Self) -> bool {
@@ -462,23 +494,7 @@ impl<'a, A: PartialEq + 'a, const N: usize> PartialEq for SliceMut<'a, A, N> {
     }
 }
 
-impl<'a, A: PartialEq + 'a, const N: usize> PartialEq<Slice<'a, A, N>> for SliceMut<'a, A, N> {
-    #[inline]
-    #[must_use]
-    fn eq(&self, other: &Slice<'a, A, N>) -> bool {
-        self.len() == other.len() && self.iter().eq(other.iter())
-    }
-}
-
-impl<'a, A: PartialEq + 'a, const N: usize> PartialEq<RingBuffer<A, N>> for SliceMut<'a, A, N> {
-    #[inline]
-    #[must_use]
-    fn eq(&self, other: &RingBuffer<A, N>) -> bool {
-        self.len() == other.len() && self.iter().eq(other.iter())
-    }
-}
-
-impl<'a, A: PartialEq + 'a, S, const N: usize> PartialEq<S> for SliceMut<'a, A, N>
+impl<'a, A: PartialEq + 'a, N: ChunkLength<A> + 'a, S> PartialEq<S> for SliceMut<'a, A, N>
 where
     S: Borrow<[A]>,
 {
@@ -490,9 +506,9 @@ where
     }
 }
 
-impl<'a, A: Eq + 'a, const N: usize> Eq for SliceMut<'a, A, N> {}
+impl<'a, A: Eq + 'a, N: ChunkLength<A> + 'a> Eq for SliceMut<'a, A, N> {}
 
-impl<'a, A: PartialOrd + 'a, const N: usize> PartialOrd for SliceMut<'a, A, N> {
+impl<'a, A: PartialOrd + 'a, N: ChunkLength<A> + 'a> PartialOrd for SliceMut<'a, A, N> {
     #[inline]
     #[must_use]
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
@@ -500,7 +516,7 @@ impl<'a, A: PartialOrd + 'a, const N: usize> PartialOrd for SliceMut<'a, A, N> {
     }
 }
 
-impl<'a, A: Ord + 'a, const N: usize> Ord for SliceMut<'a, A, N> {
+impl<'a, A: Ord + 'a, N: ChunkLength<A> + 'a> Ord for SliceMut<'a, A, N> {
     #[inline]
     #[must_use]
     fn cmp(&self, other: &Self) -> Ordering {
@@ -508,14 +524,14 @@ impl<'a, A: Ord + 'a, const N: usize> Ord for SliceMut<'a, A, N> {
     }
 }
 
-impl<'a, A: Debug + 'a, const N: usize> Debug for SliceMut<'a, A, N> {
+impl<'a, A: Debug + 'a, N: ChunkLength<A> + 'a> Debug for SliceMut<'a, A, N> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
         f.write_str("RingBuffer")?;
         f.debug_list().entries(self.iter()).finish()
     }
 }
 
-impl<'a, A: Hash + 'a, const N: usize> Hash for SliceMut<'a, A, N> {
+impl<'a, A: Hash + 'a, N: ChunkLength<A> + 'a> Hash for SliceMut<'a, A, N> {
     #[inline]
     fn hash<H: Hasher>(&self, hasher: &mut H) {
         for item in self {
@@ -524,7 +540,7 @@ impl<'a, A: Hash + 'a, const N: usize> Hash for SliceMut<'a, A, N> {
     }
 }
 
-impl<'a, 'b, A: 'a, const N: usize> IntoIterator for &'a SliceMut<'a, A, N> {
+impl<'a, 'b, A: 'a, N: ChunkLength<A> + 'a> IntoIterator for &'a SliceMut<'a, A, N> {
     type Item = &'a A;
     type IntoIter = Iter<'a, A, N>;
 
@@ -535,7 +551,7 @@ impl<'a, 'b, A: 'a, const N: usize> IntoIterator for &'a SliceMut<'a, A, N> {
     }
 }
 
-impl<'a, 'b, A: 'a, const N: usize> IntoIterator for &'a mut SliceMut<'a, A, N> {
+impl<'a, 'b, A: 'a, N: ChunkLength<A> + 'a> IntoIterator for &'a mut SliceMut<'a, A, N> {
     type Item = &'a mut A;
     type IntoIter = IterMut<'a, A, N>;
 

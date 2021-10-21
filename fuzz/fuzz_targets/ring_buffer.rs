@@ -1,11 +1,9 @@
 #![no_main]
-#![feature(is_sorted)]
 
 use std::fmt::Debug;
 use std::iter::FromIterator;
 
 use arbitrary::Arbitrary;
-use array_ops::{ArrayMut, HasLength};
 use libfuzzer_sys::fuzz_target;
 
 use sized_chunks::RingBuffer;
@@ -14,19 +12,25 @@ mod assert;
 use assert::assert_panic;
 
 #[derive(Arbitrary, Debug)]
-enum Construct<A> {
+enum Construct<A>
+where
+    A: Arbitrary,
+{
     Empty,
     Single(A),
     Pair((A, A)),
-    DrainFrom(RingBuffer<A, 64>),
-    CollectFrom(RingBuffer<A, 64>, usize),
-    FromFront(RingBuffer<A, 64>, usize),
-    FromBack(RingBuffer<A, 64>, usize),
-    FromIter(RingBuffer<A, 64>),
+    DrainFrom(RingBuffer<A>),
+    CollectFrom(RingBuffer<A>, usize),
+    FromFront(RingBuffer<A>, usize),
+    FromBack(RingBuffer<A>, usize),
+    FromIter(RingBuffer<A>),
 }
 
 #[derive(Arbitrary, Debug)]
-enum Action<A> {
+enum Action<A>
+where
+    A: Arbitrary,
+{
     PushFront(A),
     PushBack(A),
     PopFront,
@@ -39,8 +43,6 @@ enum Action<A> {
     DrainFromBack(Construct<A>, usize),
     Set(usize, A),
     Insert(usize, A),
-    InsertFrom(Vec<A>, usize),
-    InsertOrdered(A),
     Remove(usize),
     Drain,
     Clear,
@@ -48,9 +50,9 @@ enum Action<A> {
 
 impl<A> Construct<A>
 where
-    A: Arbitrary<'static> + Clone + Debug + Eq,
+    A: Arbitrary + Clone + Debug + Eq,
 {
-    fn make(self) -> RingBuffer<A, 64> {
+    fn make(self) -> RingBuffer<A> {
         match self {
             Construct::Empty => {
                 let out = RingBuffer::new();
@@ -122,7 +124,7 @@ where
 
 fuzz_target!(|input: (Construct<u32>, Vec<Action<u32>>)| {
     let (cons, actions) = input;
-    let capacity = RingBuffer::<u32, 64>::CAPACITY;
+    let capacity = RingBuffer::<u32>::CAPACITY;
     let mut chunk = cons.make();
     let mut guide: Vec<_> = chunk.iter().cloned().collect();
     for action in actions {
@@ -219,7 +221,7 @@ fuzz_target!(|input: (Construct<u32>, Vec<Action<u32>>)| {
             }
             Action::Set(index, value) => {
                 if index >= chunk.len() {
-                    assert_eq!(None, chunk.set(index, value));
+                    assert_panic(|| chunk.set(index, value));
                 } else {
                     chunk.set(index, value);
                     guide[index] = value;
@@ -231,29 +233,6 @@ fuzz_target!(|input: (Construct<u32>, Vec<Action<u32>>)| {
                 } else {
                     chunk.insert(index, value);
                     guide.insert(index, value);
-                }
-            }
-            Action::InsertFrom(values, index) => {
-                if index > chunk.len() || chunk.len() + values.len() > capacity {
-                    assert_panic(|| chunk.insert_from(index, values));
-                } else {
-                    chunk.insert_from(index, values.clone());
-                    for value in values.into_iter().rev() {
-                        guide.insert(index, value);
-                    }
-                }
-            }
-            Action::InsertOrdered(value) => {
-                if chunk.iter().is_sorted() {
-                    if chunk.is_full() {
-                        assert_panic(|| chunk.insert_ordered(value));
-                    } else {
-                        chunk.insert_ordered(value);
-                        match guide.binary_search(&value) {
-                            Ok(index) => guide.insert(index, value),
-                            Err(index) => guide.insert(index, value),
-                        }
-                    }
                 }
             }
             Action::Remove(index) => {

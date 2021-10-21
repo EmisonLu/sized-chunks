@@ -1,10 +1,14 @@
-use core::mem::MaybeUninit;
+use std::mem::MaybeUninit;
 
 use ::refpool::{PoolClone, PoolDefault};
 
+use crate::types::ChunkLength;
 use crate::Chunk;
 
-impl<A, const N: usize> PoolDefault for Chunk<A, N> {
+impl<A, N> PoolDefault for Chunk<A, N>
+where
+    N: ChunkLength<A>,
+{
     unsafe fn default_uninit(target: &mut MaybeUninit<Self>) {
         let ptr = target.as_mut_ptr();
         let left_ptr: *mut usize = &mut (*ptr).left;
@@ -14,9 +18,10 @@ impl<A, const N: usize> PoolDefault for Chunk<A, N> {
     }
 }
 
-impl<A, const N: usize> PoolClone for Chunk<A, N>
+impl<A, N> PoolClone for Chunk<A, N>
 where
     A: Clone,
+    N: ChunkLength<A>,
 {
     unsafe fn clone_uninit(&self, target: &mut MaybeUninit<Self>) {
         let ptr = target.as_mut_ptr();
@@ -40,7 +45,7 @@ mod test {
 
     #[test]
     fn default_and_clone() {
-        let pool: Pool<Chunk<usize, 64>> = Pool::new(16);
+        let pool: Pool<Chunk<usize>> = Pool::new(16);
         let mut ref1 = PoolRef::default(&pool);
         {
             let chunk = PoolRef::make_mut(&pool, &mut ref1);
@@ -48,11 +53,11 @@ mod test {
             chunk.push_back(2);
             chunk.push_back(3);
         }
-        let ref2 = PoolRef::cloned(&pool, &ref1);
+        let ref2 = ref1.cloned(&pool);
         let ref3 = PoolRef::clone_from(&pool, &Chunk::from_iter(1..=3));
-        assert_eq!(Chunk::<usize, 64>::from_iter(1..=3), *ref1);
-        assert_eq!(Chunk::<usize, 64>::from_iter(1..=3), *ref2);
-        assert_eq!(Chunk::<usize, 64>::from_iter(1..=3), *ref3);
+        assert_eq!(Chunk::<usize>::from_iter(1..=3), *ref1);
+        assert_eq!(Chunk::<usize>::from_iter(1..=3), *ref2);
+        assert_eq!(Chunk::<usize>::from_iter(1..=3), *ref3);
         assert_eq!(ref1, ref2);
         assert_eq!(ref1, ref3);
         assert_eq!(ref2, ref3);
