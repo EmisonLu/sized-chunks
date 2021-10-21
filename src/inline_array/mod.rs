@@ -6,6 +6,8 @@
 //!
 //! See [`InlineArray`](struct.InlineArray.html)
 
+use std::prelude::v1::*;
+
 use std::borrow::{Borrow, BorrowMut};
 use std::cmp::Ordering;
 use std::fmt::{Debug, Error, Formatter};

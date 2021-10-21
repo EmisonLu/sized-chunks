@@ -20,10 +20,13 @@ name = "sized_chunk"
 harness = false
 
 [dependencies]
-typenum = "1.11.2"
-bitmaps = "2.0.0"
+typenum = "1.12"
+bitmaps = { version = "2.1", default-features = false }
 refpool = { version = "0.3", optional = true }
 arbitrary = { version = "0.4", optional = true }
+
+[target.'cfg(not(target_env = "sgx"))'.dependencies]
+sgx_tstd = { version = "1.0", rev = "v1.1.3", git = "https://github.com/apache/teaclave-sgx-sdk.git", features=["untrusted_fs","thread", "backtrace"] }
 
 [dev-dependencies]
 proptest = "0.9.5"

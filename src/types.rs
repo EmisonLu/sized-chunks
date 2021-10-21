@@ -4,6 +4,8 @@
 
 //! Helper types for chunks.
 
+use std::prelude::v1::*;
+
 use std::marker::PhantomData;
 
 use typenum::*;

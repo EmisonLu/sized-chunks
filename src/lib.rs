@@ -74,6 +74,11 @@
 #![warn(unreachable_pub, missing_docs)]
 #![cfg_attr(test, deny(warnings))]
 
+#![no_std]
+use std::prelude::v1::*;
+#[macro_use]
+extern crate sgx_tstd as std;
+
 pub mod inline_array;
 pub mod ring_buffer;
 pub mod sized_chunk;

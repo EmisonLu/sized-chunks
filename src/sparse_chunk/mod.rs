@@ -6,6 +6,8 @@
 //!
 //! See [`SparseChunk`](struct.SparseChunk.html)
 
+use std::prelude::v1::*;
+
 use std::collections::{BTreeMap, HashMap};
 use std::fmt::{Debug, Error, Formatter};
 use std::iter::FromIterator;

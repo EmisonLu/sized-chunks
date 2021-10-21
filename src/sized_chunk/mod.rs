@@ -6,6 +6,8 @@
 //!
 //! See [`Chunk`](struct.Chunk.html)
 
+use std::prelude::v1::*;
+
 use crate::inline_array::InlineArray;
 use std::borrow::{Borrow, BorrowMut};
 use std::cmp::Ordering;
